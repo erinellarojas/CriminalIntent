@@ -5,6 +5,9 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.text.format.DateFormat;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -13,6 +16,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -21,9 +25,20 @@ import java.util.List;
 
 public class CrimeListFragment extends Fragment {
 
+    private static final String SAVED_SUBTITLE_VISIBLE = "subtitle";
+
     private RecyclerView mCrimeRecyclerView;
+    private View mEmptyView;
+    private Button mAddCrimeButton;
     private CrimeAdapter mAdapter;
     private int mUpdatedPosition = -1;
+    private boolean mSubtitleVisible;
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setHasOptionsMenu(true);
+    }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -32,6 +47,19 @@ public class CrimeListFragment extends Fragment {
 
         mCrimeRecyclerView = view.findViewById(R.id.crime_recycler_view);
         mCrimeRecyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
+
+        mEmptyView = view.findViewById(R.id.empty_view);
+        mAddCrimeButton = view.findViewById(R.id.add_crime_button);
+        mAddCrimeButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                createNewCrime();
+            }
+        });
+
+        if (savedInstanceState != null) {
+            mSubtitleVisible = savedInstanceState.getBoolean(SAVED_SUBTITLE_VISIBLE);
+        }
 
         updateUI();
 
@@ -44,9 +72,97 @@ public class CrimeListFragment extends Fragment {
         updateUI();
     }
 
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putBoolean(SAVED_SUBTITLE_VISIBLE, mSubtitleVisible);
+    }
+
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        super.onCreateOptionsMenu(menu, inflater);
+        inflater.inflate(R.menu.fragment_crime_list, menu);
+
+        MenuItem subtitleItem = menu.findItem(R.id.show_subtitle);
+        if (mSubtitleVisible) {
+            subtitleItem.setTitle(R.string.hide_subtitle);
+        } else {
+            subtitleItem.setTitle(R.string.show_subtitle);
+        }
+
+        MenuItem addCrimeItem = menu.findItem(R.id.new_crime);
+        if (CrimeLab.get(getActivity()).getCrimes().size() >= 5) {
+            addCrimeItem.setVisible(false);
+        } else {
+            addCrimeItem.setVisible(true);
+        }
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        int id = item.getItemId();
+        if (id == R.id.new_crime) {
+            createNewCrime();
+            return true;
+        } else if (id == R.id.show_subtitle) {
+            mSubtitleVisible = !mSubtitleVisible;
+            getActivity().invalidateOptionsMenu();
+            updateSubtitle();
+            return true;
+        } else {
+            return super.onOptionsItemSelected(item);
+        }
+    }
+
+    private void createNewCrime() {
+        if (CrimeLab.get(getActivity()).getCrimes().size() >= 5) {
+            Toast.makeText(getActivity(), R.string.crime_limit_toast, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Crime crime = new Crime();
+        CrimeLab.get(getActivity()).addCrime(crime);
+        Intent intent = CrimePagerActivity
+                .newIntent(getActivity(), crime.getId());
+        startActivity(intent);
+    }
+
+    private void updateSubtitle() {
+        CrimeLab crimeLab = CrimeLab.get(getActivity());
+        int crimeCount = crimeLab.getCrimes().size();
+        String subtitle = getResources()
+                .getQuantityString(R.plurals.subtitle_plural, crimeCount, crimeCount);
+
+        if (!mSubtitleVisible) {
+            subtitle = null;
+        }
+
+        AppCompatActivity activity = (AppCompatActivity) getActivity();
+        if (activity != null && activity.getSupportActionBar() != null) {
+            activity.getSupportActionBar().setSubtitle(subtitle);
+        }
+    }
+
     private void updateUI() {
         CrimeLab crimeLab = CrimeLab.get(getActivity());
         List<Crime> crimes = crimeLab.getCrimes();
+
+        if (crimes.isEmpty()) {
+            mEmptyView.setVisibility(View.VISIBLE);
+            mCrimeRecyclerView.setVisibility(View.GONE);
+        } else {
+            mEmptyView.setVisibility(View.GONE);
+            mCrimeRecyclerView.setVisibility(View.VISIBLE);
+        }
+
+        if (crimes.size() >= 5) {
+            mAddCrimeButton.setEnabled(false);
+            mAddCrimeButton.setText(R.string.limit_reached_5);
+        } else {
+            mAddCrimeButton.setEnabled(true);
+            mAddCrimeButton.setText(R.string.add_crime);
+        }
+
+        getActivity().invalidateOptionsMenu();
 
         if (mAdapter == null) {
             mAdapter = new CrimeAdapter(crimes);
@@ -60,6 +176,8 @@ public class CrimeListFragment extends Fragment {
                 mAdapter.notifyDataSetChanged();
             }
         }
+
+        updateSubtitle();
     }
 
     private class CrimeHolder extends RecyclerView.ViewHolder implements View.OnClickListener {
@@ -84,6 +202,7 @@ public class CrimeListFragment extends Fragment {
                 public void onClick(View v) {
                     Toast.makeText(getActivity(), "Police contacted for " + mCrime.getTitle(), Toast.LENGTH_SHORT).show();
                     mCrime.setSolved(true);
+                    CrimeLab.get(getActivity()).updateCrime(mCrime);
                     mAdapter.notifyItemChanged(getAdapterPosition());
                 }
             });
